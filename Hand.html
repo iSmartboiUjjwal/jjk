@@ -3,13 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HANDCONNECT // live rig</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/human/3.3.6/human.js"></script>
+<title>HANDCONNECT // 3D rig</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap');
 
   :root{
-    --bg: #06090c;
+    --bg: #05080a;
     --cyan: #4dfff0;
     --magenta: #ff3fa4;
     --amber: #ffb020;
@@ -21,24 +26,21 @@
   html,body{
     margin:0; padding:0; height:100%; background:var(--bg);
     font-family:'JetBrains Mono', monospace;
-    overflow:hidden;
-    -webkit-tap-highlight-color: transparent;
+    overflow:hidden; -webkit-tap-highlight-color:transparent;
   }
-  #stage{
-    position:relative; width:100vw; height:100vh; background:#000;
-  }
+  #stage{ position:relative; width:100vw; height:100vh; background:#000; }
   video{
     position:absolute; inset:0; width:100%; height:100%;
     object-fit:cover; transform:scaleX(-1);
-    filter:brightness(0.72) saturate(1.05) contrast(1.05);
+    filter:brightness(0.55) saturate(1.05) contrast(1.05);
   }
-  canvas#overlay{
+  canvas#three-canvas{
     position:absolute; inset:0; width:100%; height:100%;
-    transform:scaleX(-1);
+    pointer-events:none;
   }
   #vignette{
     position:absolute; inset:0; pointer-events:none;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%);
   }
   #scanlines{
     position:absolute; inset:0; pointer-events:none; opacity:0.05;
@@ -49,86 +51,56 @@
   header{
     position:absolute; top:0; left:0; right:0;
     display:flex; align-items:center; justify-content:space-between;
-    padding: 18px 20px 0;
-    z-index:5; pointer-events:none;
+    padding: 18px 20px 0; z-index:5; pointer-events:none;
   }
   .brand{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight:700; font-size:15px; letter-spacing:0.14em;
-    color:#eafffb;
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:15px;
+    letter-spacing:0.14em; color:#eafffb;
   }
   .brand span{ color: var(--cyan); }
   .brand small{
-    display:block; font-family:'JetBrains Mono',monospace;
-    font-weight:400; font-size:9px; letter-spacing:0.2em;
-    color: var(--dim); margin-top:2px;
+    display:block; font-family:'JetBrains Mono',monospace; font-weight:400;
+    font-size:9px; letter-spacing:0.2em; color: var(--dim); margin-top:2px;
   }
-  .clock{
-    font-size:11px; color:var(--dim); letter-spacing:0.08em; text-align:right;
-  }
+  .clock{ font-size:11px; color:var(--dim); letter-spacing:0.08em; text-align:right; }
   .clock b{ color:#d7f5ef; font-weight:500; }
 
   #hud{
-    position:absolute; top:64px; left:16px;
-    z-index:5; pointer-events:none;
-    background: var(--panel);
-    border: 1px solid rgba(77,255,240,0.25);
-    border-left: 2px solid var(--cyan);
-    padding: 10px 14px;
-    min-width: 168px;
+    position:absolute; top:64px; left:16px; z-index:5; pointer-events:none;
+    background: var(--panel); border: 1px solid rgba(77,255,240,0.25);
+    border-left: 2px solid var(--cyan); padding: 10px 14px; min-width: 168px;
     backdrop-filter: blur(6px);
   }
   .row{
     display:flex; justify-content:space-between; align-items:baseline;
-    gap:14px; font-size:10.5px; letter-spacing:0.06em;
-    color: var(--dim); padding: 3px 0;
+    gap:14px; font-size:10.5px; letter-spacing:0.06em; color: var(--dim); padding: 3px 0;
   }
-  .row b{
-    color:#eafffb; font-size:13px; font-weight:700;
-  }
+  .row b{ color:#eafffb; font-size:13px; font-weight:700; }
   .row.gesture b{ color: var(--amber); }
   .row.pulse b{ color: var(--lime); }
   .hairline{ height:1px; background:rgba(255,255,255,0.08); margin:6px 0; }
-
-  #confbar{
-    height:3px; width:100%; background:rgba(255,255,255,0.08); margin-top:6px; position:relative; overflow:hidden;
-  }
-  #confbar i{
-    display:block; height:100%; width:0%;
-    background: linear-gradient(90deg, var(--cyan), var(--lime));
-    transition: width 0.12s linear;
-  }
+  #confbar{ height:3px; width:100%; background:rgba(255,255,255,0.08); margin-top:6px; position:relative; overflow:hidden; }
+  #confbar i{ display:block; height:100%; width:0%; background: linear-gradient(90deg, var(--cyan), var(--lime)); transition: width 0.12s linear; }
 
   #startBtn{
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    z-index:10;
-    background: rgba(8,14,17,0.85);
-    border:1px solid rgba(77,255,240,0.4);
-    color:#eafffb;
-    font-family:'Space Grotesk', sans-serif;
-    font-weight:700; font-size:13px; letter-spacing:0.12em;
-    padding:16px 26px;
-    cursor:pointer;
-    text-transform:uppercase;
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:10;
+    background: rgba(8,14,17,0.85); border:1px solid rgba(77,255,240,0.4); color:#eafffb;
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:13px;
+    letter-spacing:0.12em; padding:16px 26px; cursor:pointer; text-transform:uppercase;
   }
   #startBtn:active{ transform:translate(-50%,-50%) scale(0.97); }
   #startBtn .sub{
     display:block; margin-top:4px; font-family:'JetBrains Mono',monospace;
-    font-weight:400; font-size:9.5px; letter-spacing:0.05em; color:var(--dim);
-    text-transform:none;
+    font-weight:400; font-size:9.5px; letter-spacing:0.05em; color:var(--dim); text-transform:none;
   }
 
   #foot{
     position:absolute; bottom:14px; left:16px; right:16px;
-    display:flex; justify-content:space-between; align-items:flex-end;
-    z-index:5; pointer-events:none;
+    display:flex; justify-content:space-between; align-items:flex-end; z-index:5; pointer-events:none;
   }
-  #legend{
-    display:flex; gap:12px; font-size:9.5px; color:var(--dim); letter-spacing:0.04em;
-  }
+  #legend{ display:flex; gap:12px; font-size:9.5px; color:var(--dim); letter-spacing:0.04em; }
   #legend span{ display:flex; align-items:center; gap:5px; }
   #legend i{ width:8px; height:8px; display:inline-block; border-radius:1px; }
-
   #fpsWrap{ text-align:right; font-size:9.5px; color:var(--dim); }
   #fpsWrap b{ color:#eafffb; }
 
@@ -151,12 +123,12 @@
 
 <div id="stage">
   <video id="cam" autoplay playsinline muted></video>
-  <canvas id="overlay"></canvas>
+  <canvas id="three-canvas"></canvas>
   <div id="scanlines"></div>
   <div id="vignette"></div>
 
   <header>
-    <div class="brand">HAND<span>CONNECT</span><small>SKELETAL TRACKING RIG · v1.0</small></div>
+    <div class="brand">HAND<span>CONNECT</span><small>THREE.JS SKELETAL RIG · v2.0</small></div>
     <div class="clock" id="clock">--:--:--</div>
   </header>
 
@@ -171,23 +143,21 @@
 
   <div id="foot">
     <div id="legend">
-      <span><i style="background:var(--amber)"></i>THUMB</span>
-      <span><i style="background:var(--cyan)"></i>INDEX</span>
-      <span><i style="background:var(--lime)"></i>MIDDLE</span>
-      <span><i style="background:var(--magenta)"></i>RING</span>
+      <span><i style="background:#ffb020"></i>THUMB</span>
+      <span><i style="background:#4dfff0"></i>INDEX</span>
+      <span><i style="background:#b6ff3f"></i>MIDDLE</span>
+      <span><i style="background:#ff3fa4"></i>RING</span>
       <span><i style="background:#9d7bff"></i>PINKY</span>
     </div>
-    <div id="fpsWrap">MODEL <b>HANDLANDMARK-LITE</b><br>axshatt.local/HandConnect</div>
+    <div id="fpsWrap">RENDER <b>THREE.JS WEBGL</b><br>MODEL <b>MEDIAPIPE HANDS</b></div>
   </div>
 
-  <button id="startBtn">Enable Camera<span class="sub">start real-time hand tracking</span></button>
+  <button id="startBtn">Enable Camera<span class="sub">start real-time 3D hand tracking</span></button>
   <div id="err"></div>
 </div>
 
 <script>
 const video = document.getElementById('cam');
-const canvas = document.getElementById('overlay');
-const ctx = canvas.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 const errBox = document.getElementById('err');
 const clockEl = document.getElementById('clock');
@@ -205,188 +175,266 @@ function tickClock(){
 setInterval(tickClock, 1000);
 tickClock();
 
-// finger colors keyed by landmark group index (0=thumb..4=pinky)
-const FINGER_COLORS = ['#ffb020', '#4dfff0', '#b6ff3f', '#ff3fa4', '#9d7bff'];
-const FINGER_CHAINS = [
-  [0,1,2,3,4],
-  [0,5,6,7,8],
-  [0,9,10,11,12],
-  [0,13,14,15,16],
-  [0,17,18,19,20]
-];
-const PALM_LOOP = [5,9,13,17];
-const TIPS = [4,8,12,16,20];
+/* ---------------- three.js setup ---------------- */
+const canvas3d = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
 
-let human = null;
-let running = false;
-let lastFrameTime = performance.now();
-let fpsSmooth = 0;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 3);
+camera.lookAt(0, 0, 0);
 
-const humanConfig = {
-  modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/',
-  backend: 'webgl',
-  debug: false,
-  async: true,
-  warmup: 'none',
-  face: { enabled: false },
-  body: { enabled: false },
-  object: { enabled: false },
-  gesture: { enabled: false },
-  segmentation: { enabled: false },
-  hand: {
-    enabled: true,
-    maxDetected: 2,
-    minConfidence: 0.5,
-    iouThreshold: 0.2,
-    landmarks: true
-  }
+// visible plane size at z=0 given camera distance 3
+const CAM_DIST = 3;
+const FOV_RAD = THREE.MathUtils.degToRad(50);
+function visibleHeightAtZ0(){ return 2 * CAM_DIST * Math.tan(FOV_RAD / 2); }
+function visibleWidthAtZ0(){ return visibleHeightAtZ0() * camera.aspect; }
+
+// faint holographic floor grid for depth cue
+const grid = new THREE.GridHelper(6, 24, 0x2a4a48, 0x122422);
+grid.position.y = -1.15;
+grid.material.transparent = true;
+grid.material.opacity = 0.35;
+scene.add(grid);
+
+// slow ambient particle drift in background
+const starGeo = new THREE.BufferGeometry();
+const STAR_COUNT = 140;
+const starPos = new Float32Array(STAR_COUNT * 3);
+for(let i=0;i<STAR_COUNT;i++){
+  starPos[i*3]   = (Math.random()-0.5) * 6;
+  starPos[i*3+1] = (Math.random()-0.5) * 3.4;
+  starPos[i*3+2] = -1 - Math.random()*3;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({ color: 0x2fd9c8, size: 0.012, transparent:true, opacity:0.5 });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+/* ---- hand skeleton geometry pools ---- */
+const FINGER_COLORS = {
+  thumb:  0xffb020,
+  index:  0x4dfff0,
+  middle: 0xb6ff3f,
+  ring:   0xff3fa4,
+  pinky:  0x9d7bff,
+  palm:   0x9fe8ff
 };
 
-function resizeCanvas(){
-  canvas.width = video.videoWidth || window.innerWidth;
-  canvas.height = video.videoHeight || window.innerHeight;
+const EDGES = [
+  [0,1,'thumb'],[1,2,'thumb'],[2,3,'thumb'],[3,4,'thumb'],
+  [0,5,'index'],[5,6,'index'],[6,7,'index'],[7,8,'index'],
+  [0,9,'middle'],[9,10,'middle'],[10,11,'middle'],[11,12,'middle'],
+  [0,13,'ring'],[13,14,'ring'],[14,15,'ring'],[15,16,'ring'],
+  [0,17,'pinky'],[17,18,'pinky'],[18,19,'pinky'],[19,20,'pinky'],
+  [5,9,'palm'],[9,13,'palm'],[13,17,'palm'],[17,5,'palm']
+];
+const TIPS = [4,8,12,16,20];
+const MAX_HANDS = 2;
+const JOINTS_PER_HAND = 21;
+
+const boneGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+const jointGeo = new THREE.SphereGeometry(1, 10, 10);
+const tipGeo = new THREE.SphereGeometry(1, 12, 12);
+
+function makeBoneMat(color){
+  return new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.92, blending: THREE.AdditiveBlending, depthWrite:false });
 }
-window.addEventListener('resize', () => { if(video.videoWidth) resizeCanvas(); });
-
-function dist(a, b){
-  return Math.hypot(a[0]-b[0], a[1]-b[1]);
+function makeJointMat(){
+  return new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.85, blending: THREE.AdditiveBlending, depthWrite:false });
+}
+function makeTipMat(color){
+  return new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.55, blending: THREE.AdditiveBlending, depthWrite:false });
 }
 
-function classifyGesture(landmarks){
-  const wrist = landmarks[0];
-  const midMcp = landmarks[9];
-  const handScale = Math.max(dist(wrist, midMcp), 1);
+const handRigs = [];
+for(let h=0; h<MAX_HANDS; h++){
+  const bones = EDGES.map(([a,b,finger]) => {
+    const m = new THREE.Mesh(boneGeo, makeBoneMat(FINGER_COLORS[finger]));
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
+  const joints = [];
+  for(let j=0;j<JOINTS_PER_HAND;j++){
+    const m = new THREE.Mesh(jointGeo, makeJointMat());
+    m.scale.setScalar(TIPS.includes(j) ? 0.028 : 0.016);
+    m.visible = false;
+    scene.add(m);
+    joints.push(m);
+  }
+  const tipGlows = TIPS.map((tipIdx, i) => {
+    const fingerNames = ['thumb','index','middle','ring','pinky'];
+    const m = new THREE.Mesh(tipGeo, makeTipMat(FINGER_COLORS[fingerNames[i]]));
+    m.scale.setScalar(0.06);
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
+  handRigs.push({ bones, joints, tipGlows, smoothed: null });
+}
 
+function setBone(mesh, start, end, radius){
+  const dir = new THREE.Vector3().subVectors(end, start);
+  const length = Math.max(dir.length(), 0.001);
+  const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+  mesh.position.copy(mid);
+  mesh.scale.set(radius, length, radius);
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+  mesh.quaternion.copy(quat);
+  mesh.visible = true;
+}
+
+function landmarkToWorld(lm){
+  const vw = visibleWidthAtZ0();
+  const vh = visibleHeightAtZ0();
+  const x = (lm.x - 0.5) * vw;
+  const y = (0.5 - lm.y) * vh;
+  const z = -lm.z * 3.2; // depth exaggeration toward camera
+  return new THREE.Vector3(x, y, z);
+}
+
+function dist3(a,b){ return a.distanceTo(b); }
+
+function classifyGesture(pts){
+  const wrist = pts[0];
+  const midMcp = pts[9];
+  const handScale = Math.max(dist3(wrist, midMcp), 0.001);
   let tipSum = 0;
-  TIPS.forEach(i => { tipSum += dist(landmarks[i], wrist); });
-  const spread = (tipSum / TIPS.length) / handScale; // ~0.6 curled -> ~2.2 open
-
-  const pinchDist = dist(landmarks[4], landmarks[8]) / handScale;
+  TIPS.forEach(i => { tipSum += dist3(pts[i], wrist); });
+  const spread = (tipSum / TIPS.length) / handScale;
+  const pinchDist = dist3(pts[4], pts[8]) / handScale;
   const spreadPct = Math.max(0, Math.min(1, (spread - 0.55) / (2.1 - 0.55)));
-
   let label = 'Open';
   if (pinchDist < 0.45) label = 'Pinch';
   else if (spread < 1.05) label = 'Fist';
   else if (spread < 1.55) label = 'Half';
   else label = 'Open';
-
   return { label, pct: Math.round(spreadPct * 100) };
 }
 
-function drawGlowLine(x1,y1,x2,y2,color,width,blur){
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = blur;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x1,y1);
-  ctx.lineTo(x2,y2);
-  ctx.stroke();
-  ctx.restore();
-}
+function updateHandRig(rig, landmarks){
+  const rawPts = landmarks.map(landmarkToWorld);
 
-function drawGlowDot(x,y,color,r,blur){
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = blur;
-  ctx.beginPath();
-  ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function renderHand(landmarks, gesture){
-  const pts = landmarks.map(p => [p[0], p[1]]);
-
-  // palm loop
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1.4;
-  ctx.shadowColor = '#ffffff';
-  ctx.shadowBlur = 6;
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  PALM_LOOP.forEach(i => ctx.lineTo(pts[i][0], pts[i][1]));
-  ctx.lineTo(pts[0][0], pts[0][1]);
-  ctx.stroke();
-  ctx.restore();
-
-  // finger chains
-  FINGER_CHAINS.forEach((chain, ci) => {
-    const color = FINGER_COLORS[ci];
-    for(let k=0; k<chain.length-1; k++){
-      const a = pts[chain[k]], b = pts[chain[k+1]];
-      drawGlowLine(a[0],a[1],b[0],b[1], color, 2.2, 9);
+  if(!rig.smoothed){
+    rig.smoothed = rawPts.map(p => p.clone());
+  } else {
+    for(let i=0;i<rawPts.length;i++){
+      rig.smoothed[i].lerp(rawPts[i], 0.55);
     }
-  });
-
-  // convergence rays when pinching: fingertips fan toward thumb tip
-  if(gesture.label === 'Pinch'){
-    const anchor = pts[4];
-    [8,12,16,20].forEach((tipIdx, i) => {
-      drawGlowLine(anchor[0],anchor[1], pts[tipIdx][0], pts[tipIdx][1], FINGER_COLORS[i+1], 1.3, 12);
-    });
   }
+  const pts = rig.smoothed;
 
-  // joints
+  EDGES.forEach(([a,b], i) => {
+    setBone(rig.bones[i], pts[a], pts[b], 0.012);
+  });
   pts.forEach((p, i) => {
-    const isTip = TIPS.includes(i);
-    drawGlowDot(p[0], p[1], isTip ? '#ffffff' : 'rgba(255,255,255,0.55)', isTip ? 3.2 : 1.8, isTip ? 10 : 4);
+    rig.joints[i].position.copy(p);
+    rig.joints[i].visible = true;
+  });
+  TIPS.forEach((tipIdx, i) => {
+    rig.tipGlows[i].position.copy(pts[tipIdx]);
+    rig.tipGlows[i].visible = true;
   });
 
-  // wrist anchor pulse
-  drawGlowDot(pts[0][0], pts[0][1], '#4dfff0', 4, 16);
+  return classifyGesture(pts);
 }
 
-async function detectLoop(){
-  if(!running) return;
-  try{
-    const result = await human.detect(video);
-    const now = performance.now();
-    const inst = 1000 / Math.max(1, now - lastFrameTime);
-    fpsSmooth = fpsSmooth ? fpsSmooth*0.85 + inst*0.15 : inst;
-    lastFrameTime = now;
+function hideRig(rig){
+  rig.bones.forEach(m => m.visible = false);
+  rig.joints.forEach(m => m.visible = false);
+  rig.tipGlows.forEach(m => m.visible = false);
+  rig.smoothed = null;
+}
 
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+/* gentle camera drift for parallax feel */
+let camT = 0;
+function updateCameraDrift(dt){
+  camT += dt;
+  camera.position.x = Math.sin(camT * 0.25) * 0.12;
+  camera.position.y = Math.cos(camT * 0.2) * 0.06;
+  camera.lookAt(0,0,0);
+  grid.rotation.z = Math.sin(camT * 0.1) * 0.02;
+}
 
-    const hands = result.hand || [];
-    handCountEl.textContent = hands.length;
-    fpsEl.textContent = fpsSmooth.toFixed(0);
+/* ---------------- MediaPipe Hands ---------------- */
+let latestGesture = null;
+let handsSeen = 0;
+let fpsSmooth = 0;
+let lastResultTime = performance.now();
 
-    if(hands.length > 0){
-      let bestGesture = null;
-      hands.forEach(h => {
-        if(!h.keypoints && !h.landmarks) return;
-        const raw = h.landmarks || h.keypoints.map(k => k.position || [k.x,k.y]);
-        const g = classifyGesture(raw);
-        if(!bestGesture) bestGesture = g;
-        renderHand(raw, g);
-      });
-      if(bestGesture){
-        gestureEl.textContent = bestGesture.label;
-        confEl.textContent = bestGesture.pct + '%';
-        confbarFill.style.width = bestGesture.pct + '%';
-      }
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+hands.setOptions({
+  maxNumHands: MAX_HANDS,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6,
+  selfieMode: true
+});
+hands.onResults(onResults);
+
+function onResults(results){
+  const now = performance.now();
+  const inst = 1000 / Math.max(1, now - lastResultTime);
+  fpsSmooth = fpsSmooth ? fpsSmooth * 0.85 + inst * 0.15 : inst;
+  lastResultTime = now;
+
+  const multi = results.multiHandLandmarks || [];
+  handsSeen = multi.length;
+  handCountEl.textContent = handsSeen;
+  fpsEl.textContent = fpsSmooth.toFixed(0);
+
+  let bestGesture = null;
+  for(let h=0; h<MAX_HANDS; h++){
+    const rig = handRigs[h];
+    if(multi[h]){
+      const g = updateHandRig(rig, multi[h]);
+      if(!bestGesture) bestGesture = g;
     } else {
-      gestureEl.textContent = '—';
-      confEl.textContent = '0%';
-      confbarFill.style.width = '0%';
+      hideRig(rig);
     }
-  }catch(e){
-    console.error(e);
   }
-  requestAnimationFrame(detectLoop);
+
+  if(bestGesture){
+    gestureEl.textContent = bestGesture.label;
+    confEl.textContent = bestGesture.pct + '%';
+    confbarFill.style.width = bestGesture.pct + '%';
+  } else {
+    gestureEl.textContent = '—';
+    confEl.textContent = '0%';
+    confbarFill.style.width = '0%';
+  }
 }
+
+/* ---------------- render loop ---------------- */
+let lastTick = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = (now - lastTick) / 1000;
+  lastTick = now;
+  updateCameraDrift(dt);
+  stars.rotation.y += dt * 0.01;
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ---------------- start / camera bootstrap ---------------- */
+let mpCamera = null;
 
 async function start(){
   try{
-    startBtn.textContent = 'Loading model…';
-    human = new Human.Human(humanConfig);
-    await human.load();
-
+    startBtn.textContent = 'Starting camera…';
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false
@@ -394,11 +442,15 @@ async function start(){
     video.srcObject = stream;
     await new Promise(res => { video.onloadedmetadata = res; });
     await video.play();
-    resizeCanvas();
+
+    mpCamera = new Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); },
+      width: 1280,
+      height: 720
+    });
+    mpCamera.start();
 
     startBtn.style.display = 'none';
-    running = true;
-    detectLoop();
   }catch(e){
     console.error(e);
     errBox.style.display = 'block';
@@ -410,5 +462,4 @@ async function start(){
 startBtn.addEventListener('click', start);
 </script>
 </body>
-  </html>
-  
+</html>
