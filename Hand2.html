@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>GESTURE // CTRL</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#05080d;
+    --panel:rgba(9,14,20,0.66);
+    --border:#1c2b38;
+    --border-bright:#2c4356;
+    --cyan:#00e5ff;
+    --magenta:#c04dff;
+    --amber:#ffb833;
+    --text:#dceef4;
+    --text-dim:#5c7383;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html,body{
+    width:100%; height:100%;
+    background:var(--bg);
+    overflow:hidden;
+    font-family:'Inter',sans-serif;
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #app{ position:relative; width:100vw; height:100vh; }
+
+  #canvas-container{ position:absolute; inset:0; z-index:1; }
+  #canvas-container canvas{ display:block; }
+
+  /* faint background grid */
+  #bg-grid{
+    position:absolute; inset:0; z-index:0;
+    background-image:
+      linear-gradient(to right, rgba(0,229,255,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,229,255,0.035) 1px, transparent 1px);
+    background-size:42px 42px;
+  }
+
+  /* scanline sweep, subtle */
+  #scan{
+    position:absolute; inset:0; z-index:5; pointer-events:none;
+    background:linear-gradient(to bottom, transparent 0%, rgba(0,229,255,0.05) 50%, transparent 100%);
+    background-size:100% 220px;
+    animation:sweep 7s linear infinite;
+    mix-blend-mode:screen;
+    opacity:0.5;
+  }
+  @keyframes sweep{
+    0%{ background-position: 0 -220px; }
+    100%{ background-position: 0 100vh; }
+  }
+
+  /* outer frame corner brackets */
+  .frame-corner{ position:absolute; width:26px; height:26px; z-index:6; pointer-events:none; }
+  .frame-corner::before, .frame-corner::after{ content:''; position:absolute; background:var(--cyan); opacity:0.85; }
+  .fc-tl{ top:18px; left:18px; }
+  .fc-tl::before{ width:2px; height:26px; top:0; left:0; }
+  .fc-tl::after{ width:26px; height:2px; top:0; left:0; }
+  .fc-tr{ top:18px; right:18px; }
+  .fc-tr::before{ width:2px; height:26px; top:0; right:0; }
+  .fc-tr::after{ width:26px; height:2px; top:0; right:0; }
+  .fc-bl{ bottom:18px; left:18px; }
+  .fc-bl::before{ width:2px; height:26px; bottom:0; left:0; }
+  .fc-bl::after{ width:26px; height:2px; bottom:0; left:0; }
+  .fc-br{ bottom:18px; right:18px; }
+  .fc-br::before{ width:2px; height:26px; bottom:0; right:0; }
+  .fc-br::after{ width:26px; height:2px; bottom:0; right:0; }
+
+  /* HUD panels */
+  .panel{
+    position:absolute; z-index:7;
+    background:var(--panel);
+    border:1px solid var(--border);
+    backdrop-filter:blur(6px);
+    padding:14px 16px;
+    min-width:200px;
+  }
+  .panel-label{
+    font-family:'Space Mono',monospace;
+    font-size:10px;
+    letter-spacing:2px;
+    color:var(--cyan);
+    opacity:0.8;
+    margin-bottom:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .panel-label .dot{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--cyan);
+    box-shadow:0 0 4px var(--cyan);
+  }
+  .row{
+    display:flex; justify-content:space-between;
+    font-family:'Space Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    padding:3px 0;
+    border-bottom:1px solid rgba(255,255,255,0.04);
+  }
+  .row span:last-child{ color:var(--text); }
+  .row .active{ color:var(--amber) !important; text-shadow:0 0 6px rgba(255,184,51,0.5); }
+
+  #panel-status{ top:56px; left:18px; }
+  #panel-data{ top:56px; right:18px; text-align:right; }
+  #panel-data .row{ flex-direction:row-reverse; }
+
+  #panel-legend{ bottom:56px; right:18px; width:230px; }
+  .legend-item{
+    display:flex; align-items:center; gap:10px;
+    font-family:'Space Mono',monospace; font-size:10px;
+    color:var(--text-dim); padding:5px 0;
+    letter-spacing:0.5px;
+  }
+  .legend-icon{
+    width:20px; height:20px; border:1px solid var(--border-bright);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:var(--cyan); flex-shrink:0;
+  }
+  .legend-item.on{ color:var(--text); }
+  .legend-item.on .legend-icon{ border-color:var(--amber); color:var(--amber); box-shadow:0 0 6px rgba(255,184,51,0.3); }
+
+  /* webcam preview */
+  #preview-wrap{
+    bottom:56px; left:18px;
+    padding:8px; width:220px;
+  }
+  #preview-canvas{
+    width:100%; height:150px;
+    background:#000;
+    display:block;
+    border:1px solid var(--border);
+    transform:scaleX(-1);
+  }
+
+  /* title */
+  #title-block{
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
+    z-index:7; text-align:center; pointer-events:none;
+  }
+  #title-block h1{
+    font-family:'Space Mono',monospace;
+    font-size:14px; letter-spacing:6px;
+    color:var(--text);
+    font-weight:700;
+  }
+  #title-block h1 span{ color:var(--cyan); }
+  #title-block p{
+    font-family:'Space Mono',monospace;
+    font-size:9px; letter-spacing:2px;
+    color:var(--text-dim);
+    margin-top:4px;
+  }
+
+  /* crosshair reticle following hand */
+  #reticle{
+    position:absolute; width:64px; height:64px;
+    z-index:6; pointer-events:none;
+    transform:translate(-50%,-50%);
+    opacity:0; transition:opacity 0.25s ease;
+  }
+  #reticle.active{ opacity:1; }
+  #reticle::before, #reticle::after{
+    content:''; position:absolute; background:var(--amber);
+  }
+  #reticle::before{ width:100%; height:1px; top:50%; left:0; opacity:0.5; }
+  #reticle::after{ width:1px; height:100%; left:50%; top:0; opacity:0.5; }
+  .ret-corner{ position:absolute; width:12px; height:12px; }
+  .ret-corner::before, .ret-corner::after{ content:''; position:absolute; background:var(--amber); }
+  .ret-tl{ top:0; left:0; } .ret-tl::before{ width:2px; height:12px; } .ret-tl::after{ width:12px; height:2px; }
+  .ret-tr{ top:0; right:0; } .ret-tr::before{ width:2px; height:12px; right:0; } .ret-tr::after{ width:12px; height:2px; right:0; }
+  .ret-bl{ bottom:0; left:0; } .ret-bl::before{ width:2px; height:12px; } .ret-bl::after{ width:12px; height:2px; bottom:0; }
+  .ret-br{ bottom:0; right:0; } .ret-br::before{ width:2px; height:12px; right:0; } .ret-br::after{ width:12px; height:2px; bottom:0; right:0; }
+
+  /* start overlay */
+  #start-screen{
+    position:absolute; inset:0; z-index:20;
+    background:rgba(5,8,13,0.94);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    text-align:center; gap:22px;
+  }
+  #start-screen h2{
+    font-family:'Space Mono',monospace;
+    font-size:22px; letter-spacing:4px; color:var(--text);
+  }
+  #start-screen h2 span{ color:var(--cyan); }
+  #start-screen p{
+    font-family:'Inter',sans-serif;
+    font-size:13px; color:var(--text-dim);
+    max-width:360px; line-height:1.6;
+  }
+  #start-btn{
+    font-family:'Space Mono',monospace;
+    font-size:12px; letter-spacing:3px;
+    color:var(--cyan);
+    background:transparent;
+    border:1px solid var(--cyan);
+    padding:14px 34px;
+    cursor:pointer;
+    transition:all 0.2s ease;
+  }
+  #start-btn:hover{ background:rgba(0,229,255,0.1); box-shadow:0 0 16px rgba(0,229,255,0.25); }
+  #start-btn:disabled{ opacity:0.4; cursor:default; }
+  #start-err{ font-family:'Space Mono',monospace; font-size:10px; color:var(--amber); letter-spacing:1px; min-height:14px; }
+
+  #loader{
+    width:220px; height:2px; background:var(--border); position:relative; overflow:hidden; display:none;
+  }
+  #loader.show{ display:block; }
+  #loader::after{
+    content:''; position:absolute; top:0; left:0; height:100%; width:40%;
+    background:var(--cyan);
+    animation:load 1.1s ease-in-out infinite;
+  }
+  @keyframes load{
+    0%{ left:-40%; } 100%{ left:100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bg-grid"></div>
+  <div id="canvas-container"></div>
+  <div id="scan"></div>
+
+  <div class="frame-corner fc-tl"></div>
+  <div class="frame-corner fc-tr"></div>
+  <div class="frame-corner fc-bl"></div>
+  <div class="frame-corner fc-br"></div>
+
+  <div id="title-block">
+    <h1>GESTURE <span>// CTRL</span></h1>
+    <p>REAL-TIME HAND TRACKING INTERFACE</p>
+  </div>
+
+  <div class="panel" id="panel-status">
+    <div class="panel-label"><span>SYSTEM STATUS</span><span class="dot" id="status-dot"></span></div>
+    <div class="row"><span>TRACKING</span><span id="stat-tracking">STANDBY</span></div>
+    <div class="row"><span>GESTURE</span><span id="stat-gesture">—</span></div>
+    <div class="row"><span>MODE</span><span id="stat-mode">IDLE ROTATE</span></div>
+    <div class="row"><span>FPS</span><span id="stat-fps">00</span></div>
+  </div>
+
+  <div class="panel" id="panel-data">
+    <div class="panel-label"><span>VECTOR DATA</span><span class="dot" id="status-dot-2"></span></div>
+    <div class="row"><span id="stat-x">X&nbsp;&nbsp;0.000</span><span></span></div>
+    <div class="row"><span id="stat-y">Y&nbsp;&nbsp;0.000</span><span></span></div>
+    <div class="row"><span id="stat-pinch">PINCH 0.000</span><span></span></div>
+    <div class="row"><span id="stat-scale">SCALE 1.000</span><span></span></div>
+  </div>
+
+  <div class="panel" id="preview-wrap">
+    <div class="panel-label"><span>OPTICAL FEED</span><span class="dot"></span></div>
+    <canvas id="preview-canvas" width="220" height="150"></canvas>
+  </div>
+
+  <div class="panel" id="panel-legend">
+    <div class="panel-label"><span>GESTURE MAP</span><span class="dot"></span></div>
+    <div class="legend-item" id="leg-open"><div class="legend-icon">◇</div><span>OPEN PALM — ROTATE OBJECT</span></div>
+    <div class="legend-item" id="leg-pinch"><div class="legend-icon">◎</div><span>PINCH THUMB/INDEX — SCALE</span></div>
+    <div class="legend-item" id="leg-fist"><div class="legend-icon">●</div><span>CLOSE FIST — CYCLE SPECTRUM</span></div>
+  </div>
+
+  <div id="reticle">
+    <div class="ret-corner ret-tl"></div>
+    <div class="ret-corner ret-tr"></div>
+    <div class="ret-corner ret-bl"></div>
+    <div class="ret-corner ret-br"></div>
+  </div>
+
+  <div id="start-screen">
+    <h2>GESTURE<span>::</span>CONTROL</h2>
+    <p>Grant camera access to drive the 3D object with your hand. Open palm rotates, pinch scales, a closed fist cycles the color spectrum.</p>
+    <button id="start-btn">ENABLE CAMERA</button>
+    <div id="loader"></div>
+    <div id="start-err"></div>
+  </div>
+
+  <video id="webcam" style="display:none" playsinline></video>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+/* ---------------------------------------------------------
+   THREE.JS SCENE
+--------------------------------------------------------- */
+let scene, camera, renderer, mainObject, innerFill, ring, particles;
+const colorSpectrum = [0x00e5ff, 0xc04dff, 0xffb833];
+let colorIndex = 0;
+
+function initScene(){
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0, 0, 6.5);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+  // main faceted object - crisp edge geometry, no dense triangulated wireframe clutter
+  const geo = new THREE.IcosahedronGeometry(1.6, 1);
+  const edges = new THREE.EdgesGeometry(geo);
+  mainObject = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: colorSpectrum[0] }));
+  scene.add(mainObject);
+
+  innerFill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: colorSpectrum[0], transparent:true, opacity:0.035, side:THREE.DoubleSide
+  }));
+  scene.add(innerFill);
+
+  // orbiting tracking ring - ties into HUD reticle motif
+  const torusGeo = new THREE.TorusGeometry(2.6, 0.006, 8, 100);
+  ring = new THREE.Mesh(torusGeo, new THREE.MeshBasicMaterial({ color: colorSpectrum[0], transparent:true, opacity:0.5 }));
+  ring.rotation.x = Math.PI/2.4;
+  scene.add(ring);
+
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(3.1, 0.004, 8, 100), new THREE.MeshBasicMaterial({ color: colorSpectrum[0], transparent:true, opacity:0.25 }));
+  ring2.rotation.x = Math.PI/1.7;
+  ring2.rotation.y = 0.4;
+  scene.add(ring2);
+  ring.userData.partner = ring2;
+
+  // particle field
+  const pGeo = new THREE.BufferGeometry();
+  const count = 400;
+  const positions = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    positions[i*3] = (Math.random()-0.5)*20;
+    positions[i*3+1] = (Math.random()-0.5)*20;
+    positions[i*3+2] = (Math.random()-0.5)*20 - 4;
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color:0x2a3a46, size:0.02 }));
+  scene.add(particles);
+
+  window.addEventListener('resize', onResize);
+}
+
+function onResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function setSpectrum(idx){
+  const c = colorSpectrum[idx];
+  mainObject.material.color.setHex(c);
+  innerFill.material.color.setHex(c);
+  ring.material.color.setHex(c);
+  ring.userData.partner.material.color.setHex(c);
+}
+
+/* ---------------------------------------------------------
+   GESTURE STATE + SMOOTHING
+--------------------------------------------------------- */
+const state = {
+  targetRotY: 0, targetRotX: 0,
+  curRotY: 0, curRotX: 0,
+  targetScale: 1, curScale: 1,
+  handPresent: false,
+  handScreenX: 0.5, handScreenY: 0.5,
+  gesture: 'NONE',
+  fistCooldown: 0,
+};
+
+let idleAngle = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const t = performance.now();
+
+  if(state.handPresent){
+    state.curRotY += (state.targetRotY - state.curRotY) * 0.12;
+    state.curRotX += (state.targetRotX - state.curRotX) * 0.12;
+    state.curScale += (state.targetScale - state.curScale) * 0.16;
+  } else {
+    idleAngle += 0.0022;
+    state.curRotY += (idleAngle - state.curRotY) * 0.03;
+    state.curRotX += (0 - state.curRotX) * 0.03;
+    state.curScale += (1 - state.curScale) * 0.08;
+  }
+
+  mainObject.rotation.y = state.curRotY;
+  mainObject.rotation.x = state.curRotX;
+  mainObject.scale.setScalar(state.curScale);
+  innerFill.rotation.copy(mainObject.rotation);
+  innerFill.scale.copy(mainObject.scale);
+
+  ring.rotation.z += 0.0016;
+  ring.userData.partner.rotation.z -= 0.001;
+  particles.rotation.y += 0.0003;
+
+  renderer.render(scene, camera);
+  updateFPS(t);
+}
+
+let lastFrame = performance.now(), frames=0, fpsAcc=performance.now();
+function updateFPS(t){
+  frames++;
+  if(t - fpsAcc > 500){
+    const fps = Math.round(frames*1000/(t-fpsAcc));
+    document.getElementById('stat-fps').textContent = String(fps).padStart(2,'0');
+    frames=0; fpsAcc=t;
+  }
+}
+
+/* ---------------------------------------------------------
+   HAND TRACKING
+--------------------------------------------------------- */
+const previewCanvas = document.getElementById('preview-canvas');
+const previewCtx = previewCanvas.getContext('2d');
+const videoEl = document.getElementById('webcam');
+const reticle = document.getElementById('reticle');
+
+function dist(a,b){
+  return Math.hypot(a.x-b.x, a.y-b.y, (a.z||0)-(b.z||0));
+}
+
+function computeFistScore(lm){
+  // average distance of fingertips (index,middle,ring,pinky) to wrist, normalized by palm size
+  const wrist = lm[0];
+  const palmRef = dist(lm[0], lm[9]); // wrist to middle MCP
+  const tips = [8,12,16,20];
+  let avg = 0;
+  tips.forEach(i => avg += dist(lm[i], wrist));
+  avg /= tips.length;
+  return avg / (palmRef || 0.001); // lower = more closed
+}
+
+function onResults(results){
+  previewCtx.save();
+  previewCtx.clearRect(0,0,previewCanvas.width, previewCanvas.height);
+  previewCtx.drawImage(results.image, 0,0, previewCanvas.width, previewCanvas.height);
+
+  const hands = results.multiHandLandmarks;
+  if(hands && hands.length > 0){
+    const lm = hands[0];
+    state.handPresent = true;
+    document.getElementById('stat-tracking').textContent = 'LOCKED';
+    document.getElementById('status-dot').style.background = 'var(--amber)';
+    document.getElementById('status-dot').style.boxShadow = '0 0 4px var(--amber)';
+
+    // draw landmarks on preview
+    previewCtx.fillStyle = '#00e5ff';
+    previewCtx.strokeStyle = 'rgba(0,229,255,0.5)';
+    const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+    previewCtx.beginPath();
+    connections.forEach(([a,b])=>{
+      previewCtx.moveTo(lm[a].x*previewCanvas.width, lm[a].y*previewCanvas.height);
+      previewCtx.lineTo(lm[b].x*previewCanvas.width, lm[b].y*previewCanvas.height);
+    });
+    previewCtx.stroke();
+    lm.forEach(p=>{
+      previewCtx.beginPath();
+      previewCtx.arc(p.x*previewCanvas.width, p.y*previewCanvas.height, 1.6, 0, Math.PI*2);
+      previewCtx.fill();
+    });
+
+    // wrist position drives rotation (mirror x since video is mirrored visually)
+    const wrist = lm[0];
+    const mx = 1 - wrist.x;
+    state.targetRotY = (mx - 0.5) * Math.PI * 2.2;
+    state.targetRotX = (wrist.y - 0.5) * Math.PI * 1.4;
+
+    state.handScreenX = mx;
+    state.handScreenY = wrist.y;
+
+    // pinch -> scale
+    const pinchDist = dist(lm[4], lm[8]);
+    const scaleVal = THREE.MathUtils.clamp(THREE.MathUtils.mapLinear(pinchDist, 0.02, 0.28, 0.5, 2.1), 0.5, 2.1);
+    state.targetScale = scaleVal;
+
+    // fist detection
+    const fistScore = computeFistScore(lm);
+    const isFist = fistScore < 0.62;
+    const now = performance.now();
+
+    let gestureLabel = 'OPEN PALM';
+    let mode = 'ROTATE + SCALE';
+    document.getElementById('leg-open').classList.add('on');
+    document.getElementById('leg-pinch').classList.toggle('on', pinchDist < 0.08);
+    document.getElementById('leg-fist').classList.toggle('on', isFist);
+
+    if(pinchDist < 0.06) gestureLabel = 'PINCH';
+    if(isFist){
+      gestureLabel = 'FIST';
+      mode = 'SPECTRUM CYCLE';
+      if(now - state.fistCooldown > 750){
+        colorIndex = (colorIndex + 1) % colorSpectrum.length;
+        setSpectrum(colorIndex);
+        state.fistCooldown = now;
+      }
+    } else {
+      document.getElementById('leg-open').classList.remove('on');
+    }
+
+    document.getElementById('stat-gesture').textContent = gestureLabel;
+    document.getElementById('stat-mode').textContent = mode;
+    document.getElementById('stat-x').textContent = 'X  ' + mx.toFixed(3);
+    document.getElementById('stat-y').textContent = 'Y  ' + wrist.y.toFixed(3);
+    document.getElementById('stat-pinch').textContent = 'PINCH ' + pinchDist.toFixed(3);
+    document.getElementById('stat-scale').textContent = 'SCALE ' + state.curScale.toFixed(3);
+
+    // reticle follows wrist in screen space
+    reticle.classList.add('active');
+    reticle.style.left = (mx * window.innerWidth) + 'px';
+    reticle.style.top = (wrist.y * window.innerHeight) + 'px';
+
+  } else {
+    state.handPresent = false;
+    reticle.classList.remove('active');
+    document.getElementById('stat-tracking').textContent = 'SEARCHING';
+    document.getElementById('status-dot').style.background = 'var(--cyan)';
+    document.getElementById('status-dot').style.boxShadow = '0 0 4px var(--cyan)';
+    document.getElementById('stat-gesture').textContent = '—';
+    document.getElementById('stat-mode').textContent = 'IDLE ROTATE';
+    ['leg-open','leg-pinch','leg-fist'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  }
+  previewCtx.restore();
+}
+
+/* ---------------------------------------------------------
+   BOOTSTRAP
+--------------------------------------------------------- */
+const startBtn = document.getElementById('start-btn');
+const startScreen = document.getElementById('start-screen');
+const loader = document.getElementById('loader');
+const errEl = document.getElementById('start-err');
+
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  loader.classList.add('show');
+  errEl.textContent = '';
+  try{
+    initScene();
+    animate();
+
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
+    });
+    hands.onResults(onResults);
+
+    const mpCamera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({ image: videoEl }); },
+      width: 640,
+      height: 480
+    });
+    await mpCamera.start();
+
+    startScreen.style.opacity = '0';
+    startScreen.style.pointerEvents = 'none';
+    startScreen.style.transition = 'opacity 0.5s ease';
+    setTimeout(()=> startScreen.style.display='none', 500);
+
+  } catch(err){
+    console.error(err);
+    errEl.textContent = 'CAMERA ACCESS DENIED — CHECK PERMISSIONS';
+    startBtn.disabled = false;
+    loader.classList.remove('show');
+  }
+});
+</script>
+</body>
+</html>

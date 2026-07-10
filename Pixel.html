@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>PIXEL COSMOS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root{
+    --bg:#0a0118;
+    --panel:rgba(24,12,44,0.6);
+    --border:rgba(139,92,246,0.28);
+    --pink:#ff2e88;
+    --cyan:#00f0ff;
+    --gold:#ffd23f;
+    --violet:#8b5cf6;
+    --text:#f3ecff;
+    --text-dim:#9a8bb8;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:radial-gradient(ellipse at 50% 30%, #150a2e 0%, #0a0118 60%, #05010d 100%);
+    font-family:'Space Grotesk', sans-serif;
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #app{ position:relative; width:100vw; height:100vh; }
+  #canvas-container{ position:absolute; inset:0; z-index:1; }
+  #canvas-container canvas{ display:block; }
+
+  /* soft starfield twinkle layer, css only, cheap */
+  #twinkle{ position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0.5;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, #ffffff 100%, transparent),
+      radial-gradient(1px 1px at 70% 60%, #ffffff 100%, transparent),
+      radial-gradient(1px 1px at 40% 80%, #ffffff 100%, transparent),
+      radial-gradient(1px 1px at 85% 15%, #ffffff 100%, transparent),
+      radial-gradient(1px 1px at 55% 45%, #ffffff 100%, transparent);
+    background-size: 100% 100%;
+  }
+
+  .badge{
+    position:absolute; z-index:7;
+    background:var(--panel);
+    border:1px solid var(--border);
+    backdrop-filter:blur(10px);
+    border-radius:18px;
+    padding:14px 18px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  .badge-title{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9px; letter-spacing:2px;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    margin-bottom:6px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .badge-title .pulse{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--cyan);
+    box-shadow:0 0 8px var(--cyan);
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.4; transform:scale(0.7);} }
+
+  .badge-value{
+    font-family:'JetBrains Mono',monospace;
+    font-size:22px; font-weight:700;
+    color:var(--text);
+    line-height:1;
+  }
+  .badge-value .unit{ font-size:11px; color:var(--text-dim); font-weight:400; margin-left:4px; }
+
+  #badge-stardust{ top:24px; left:24px; }
+  #badge-captured{ top:24px; left:200px; }
+
+  #badge-mode{ top:24px; right:24px; text-align:right; min-width:190px; }
+  #badge-mode .badge-title{ justify-content:flex-end; }
+  #mode-label{ font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; }
+  #mode-bar-track{ margin-top:8px; height:4px; width:100%; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; }
+  #mode-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg, var(--violet), var(--pink)); transition:width 0.08s linear; }
+
+  /* title */
+  #title-block{
+    position:absolute; top:24px; left:50%; transform:translateX(-50%);
+    z-index:6; text-align:center; pointer-events:none;
+  }
+  #title-block h1{
+    font-size:20px; font-weight:700; letter-spacing:1px;
+    background:linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  #title-block p{
+    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:2px;
+    color:var(--text-dim); margin-top:2px;
+  }
+
+  /* legend row bottom right */
+  #legend{
+    bottom:24px; right:24px; z-index:7;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .legend-card{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:9px 14px; backdrop-filter:blur(10px);
+    transition:all 0.2s ease;
+  }
+  .legend-card.on{ border-color:var(--icon-color, var(--cyan)); box-shadow:0 0 18px -6px var(--icon-color, var(--cyan)); }
+  .legend-card .icon-wrap{
+    width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,0.04);
+    color:var(--icon-color, var(--cyan));
+    flex-shrink:0;
+  }
+  .legend-card svg{ width:15px; height:15px; }
+  .legend-text{ font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.5px; color:var(--text-dim); }
+  .legend-card.on .legend-text{ color:var(--text); }
+
+  /* webcam preview bottom left */
+  #preview-badge{ bottom:24px; left:24px; padding:10px; width:190px; }
+  #preview-canvas{
+    width:100%; height:128px; border-radius:12px; display:block;
+    background:#000; transform:scaleX(-1);
+  }
+
+  /* hand cursor comet dot (screen-space accent, subtle) */
+  #hand-dot{
+    position:absolute; width:10px; height:10px; border-radius:50%;
+    background:var(--gold); z-index:6; pointer-events:none;
+    box-shadow:0 0 14px var(--gold), 0 0 28px rgba(255,210,63,0.5);
+    transform:translate(-50%,-50%); opacity:0;
+    transition:opacity 0.25s ease;
+  }
+  #hand-dot.active{ opacity:1; }
+
+  /* start overlay */
+  #start-screen{
+    position:absolute; inset:0; z-index:20;
+    background:radial-gradient(ellipse at 50% 40%, #1a0d33 0%, #05010d 75%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; gap:20px;
+  }
+  #start-screen h2{
+    font-size:34px; font-weight:700;
+    background:linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    letter-spacing:0.5px;
+  }
+  #start-screen p{
+    font-size:13.5px; color:var(--text-dim); max-width:380px; line-height:1.7;
+  }
+  #start-btn{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; letter-spacing:2px; font-weight:700;
+    color:#0a0118;
+    background:linear-gradient(90deg, var(--cyan), var(--violet));
+    border:none; border-radius:30px;
+    padding:15px 36px;
+    cursor:pointer;
+    box-shadow:0 8px 30px -6px rgba(139,92,246,0.6);
+    transition:transform 0.18s ease, box-shadow 0.18s ease;
+  }
+  #start-btn:hover{ transform:translateY(-2px) scale(1.03); box-shadow:0 10px 34px -4px rgba(139,92,246,0.75); }
+  #start-btn:disabled{ opacity:0.4; cursor:default; transform:none; }
+  #start-err{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--pink); min-height:14px; }
+
+  #loader{ width:200px; height:3px; background:rgba(255,255,255,0.08); border-radius:2px; position:relative; overflow:hidden; display:none; }
+  #loader.show{ display:block; }
+  #loader::after{
+    content:''; position:absolute; top:0; left:0; height:100%; width:40%; border-radius:2px;
+    background:linear-gradient(90deg, var(--cyan), var(--pink));
+    animation:load 1s ease-in-out infinite;
+  }
+  @keyframes load{ 0%{ left:-40%; } 100%{ left:100%; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="twinkle"></div>
+  <div id="canvas-container"></div>
+
+  <div id="title-block">
+    <h1>PIXEL COSMOS</h1>
+    <p>HAND-DRIVEN STARDUST FIELD</p>
+  </div>
+
+  <div class="badge" id="badge-stardust">
+    <div class="badge-title"><span class="pulse"></span>STARDUST</div>
+    <div class="badge-value" id="val-stardust">0<span class="unit">particles</span></div>
+  </div>
+
+  <div class="badge" id="badge-captured">
+    <div class="badge-title">CAPTURED</div>
+    <div class="badge-value" id="val-captured">0<span class="unit">nearby</span></div>
+  </div>
+
+  <div class="badge" id="badge-mode">
+    <div class="badge-title">FIELD STATE</div>
+    <div id="mode-label">IDLE DRIFT</div>
+    <div id="mode-bar-track"><div id="mode-bar-fill"></div></div>
+  </div>
+
+  <div class="badge" id="preview-badge">
+    <div class="badge-title"><span class="pulse"></span>HAND FEED</div>
+    <canvas id="preview-canvas" width="190" height="128"></canvas>
+  </div>
+
+  <div id="legend">
+    <div class="legend-card" id="leg-attract" style="--icon-color:var(--cyan)">
+      <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="12" r="7" stroke-dasharray="3 3"/></svg></div>
+      <div class="legend-text">OPEN PALM — GRAVITY PULL</div>
+    </div>
+    <div class="legend-card" id="leg-repel" style="--icon-color:var(--pink)">
+      <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/></svg></div>
+      <div class="legend-text">CLOSE FIST — FORCE FIELD</div>
+    </div>
+    <div class="legend-card" id="leg-vortex" style="--icon-color:var(--gold)">
+      <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c4.97 0 9 2.5 9 6s-3 6-6 6-4-1.3-4-3.5 1.5-3 3-3 2.5 1 2.5 2.2"/></svg></div>
+      <div class="legend-text">PINCH — VORTEX + BURST</div>
+    </div>
+  </div>
+
+  <div id="hand-dot"></div>
+
+  <div id="start-screen">
+    <h2>PIXEL COSMOS</h2>
+    <p>Wave your hand to command a field of stardust. Open your palm to pull it close, make a fist to push it away, and pinch to spin up a vortex — release to trigger a supernova.</p>
+    <button id="start-btn">ENABLE CAMERA</button>
+    <div id="loader"></div>
+    <div id="start-err"></div>
+  </div>
+
+  <video id="webcam" style="display:none" playsinline></video>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+/* ---------------------------------------------------------
+   THREE.JS PARTICLE UNIVERSE
+--------------------------------------------------------- */
+const COUNT = 4096;
+let scene, camera, renderer, points, geometry;
+let positions, velocities, basePhase, colors, homeRadius;
+let farStars;
+
+const PALETTE = [
+  new THREE.Color(0x00f0ff),
+  new THREE.Color(0xff2e88),
+  new THREE.Color(0xffd23f),
+  new THREE.Color(0x8b5cf6),
+  new THREE.Color(0xffffff),
+];
+
+function makePixelSprite(){
+  const size = 16;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(2,2,size-4,size-4);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+function initScene(){
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0,0,9);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+  positions = new Float32Array(COUNT*3);
+  velocities = new Float32Array(COUNT*3);
+  colors = new Float32Array(COUNT*3);
+  basePhase = new Float32Array(COUNT*3);
+  homeRadius = new Float32Array(COUNT);
+
+  for(let i=0;i<COUNT;i++){
+    const r = 2 + Math.random()*4.2;
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos((Math.random()*2)-1);
+    positions[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+    positions[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    positions[i*3+2] = r*Math.cos(phi)*0.5;
+    homeRadius[i] = r;
+
+    basePhase[i*3] = Math.random()*Math.PI*2;
+    basePhase[i*3+1] = Math.random()*Math.PI*2;
+    basePhase[i*3+2] = Math.random()*Math.PI*2;
+
+    const col = PALETTE[Math.floor(Math.random()*PALETTE.length)];
+    colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+  }
+
+  geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors,3));
+
+  const material = new THREE.PointsMaterial({
+    size:0.11,
+    map:makePixelSprite(),
+    vertexColors:true,
+    transparent:true,
+    alphaTest:0.4,
+    blending:THREE.AdditiveBlending,
+    depthWrite:false,
+    sizeAttenuation:true
+  });
+
+  points = new THREE.Points(geometry, material);
+  scene.add(points);
+
+  // distant static star layer for depth
+  const farCount = 800;
+  const farPos = new Float32Array(farCount*3);
+  for(let i=0;i<farCount;i++){
+    const r = 14 + Math.random()*10;
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos((Math.random()*2)-1);
+    farPos[i*3] = r*Math.sin(phi)*Math.cos(theta);
+    farPos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    farPos[i*3+2] = r*Math.cos(phi) - 6;
+  }
+  const farGeo = new THREE.BufferGeometry();
+  farGeo.setAttribute('position', new THREE.BufferAttribute(farPos,3));
+  const farMat = new THREE.PointsMaterial({ size:0.045, color:0x8a7fae, map:makePixelSprite(), transparent:true, alphaTest:0.4, depthWrite:false });
+  farStars = new THREE.Points(farGeo, farMat);
+  scene.add(farStars);
+
+  document.getElementById('val-stardust').innerHTML = COUNT.toLocaleString() + '<span class="unit">particles</span>';
+
+  window.addEventListener('resize', onResize);
+}
+
+function onResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* ---------------------------------------------------------
+   GESTURE + PHYSICS STATE
+--------------------------------------------------------- */
+const gstate = {
+  handPresent:false,
+  handWorld: new THREE.Vector3(0,0,0),
+  openness: 0,       // 0 = fist, 1 = fully open
+  pinching:false,
+  pinchDist: 1,
+  vortexCharge: 0,
+  burstQueued:false,
+  handScreenX:0.5, handScreenY:0.5
+};
+
+function unprojectToPlane(ndcX, ndcY, z){
+  const vec = new THREE.Vector3(ndcX, ndcY, 0.5);
+  vec.unproject(camera);
+  const dir = vec.sub(camera.position).normalize();
+  const t = (z - camera.position.z) / dir.z;
+  return camera.position.clone().add(dir.multiplyScalar(t));
+}
+
+let t0 = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now-t0)/1000, 0.05);
+  t0 = now;
+  const time = now*0.001;
+
+  points.rotation.y += 0.0006;
+  farStars.rotation.y += 0.00015;
+
+  const pos = geometry.attributes.position.array;
+  const hand = gstate.handWorld;
+  let captured = 0;
+
+  for(let i=0;i<COUNT;i++){
+    const ix=i*3, iy=i*3+1, iz=i*3+2;
+    let px=pos[ix], py=pos[iy], pz=pos[iz];
+    let vx=velocities[ix], vy=velocities[iy], vz=velocities[iz];
+
+    // ambient idle drift (cheap pseudo-noise)
+    const drift = 0.0028;
+    vx += Math.sin(time*0.6 + basePhase[ix])*drift*dt*20;
+    vy += Math.cos(time*0.5 + basePhase[iy])*drift*dt*20;
+    vz += Math.sin(time*0.4 + basePhase[iz])*drift*dt*20;
+
+    if(gstate.handPresent){
+      const dx = hand.x-px, dy = hand.y-py, dz = hand.z-pz;
+      const distSq = dx*dx+dy*dy+dz*dz + 0.15;
+      const dist = Math.sqrt(distSq);
+      if(dist < 6){
+        if(dist < 1.1) captured++;
+
+        if(gstate.pinching){
+          // vortex: tangential swirl + inward pull
+          const pull = 2.6 / distSq;
+          const nx=dx/dist, ny=dy/dist, nz=dz/dist;
+          vx += nx*pull*dt*4;
+          vy += ny*pull*dt*4;
+          vz += nz*pull*dt*4;
+          // tangential (swirl around z-ish axis relative to hand)
+          const tx = -ny, ty = nx;
+          const swirl = 3.2 * (0.3 + gstate.vortexCharge*0.9);
+          vx += tx*swirl*dt;
+          vy += ty*swirl*dt;
+        } else {
+          const openForce = gstate.openness;      // 0..1 attract strength
+          const closeForce = 1-gstate.openness;    // 0..1 repel strength
+          const nx=dx/dist, ny=dy/dist, nz=dz/dist;
+
+          const attract = (2.1*openForce) / distSq;
+          vx += nx*attract*dt*3.2;
+          vy += ny*attract*dt*3.2;
+          vz += nz*attract*dt*3.2;
+
+          const repel = (2.6*closeForce) / distSq;
+          vx -= nx*repel*dt*3.2;
+          vy -= ny*repel*dt*3.2;
+          vz -= nz*repel*dt*3.2;
+        }
+      }
+    }
+
+    // gentle pull back toward home shell so field doesn't collapse/scatter forever
+    const homeDist = Math.sqrt(px*px+py*py+pz*pz) || 0.001;
+    const homePull = (homeDist - homeRadius[i]) * -0.12;
+    vx += (px/homeDist)*homePull*dt;
+    vy += (py/homeDist)*homePull*dt;
+    vz += (pz/homeDist)*homePull*dt;
+
+    // damping
+    vx *= 0.965; vy *= 0.965; vz *= 0.965;
+
+    // clamp speed
+    const speed = Math.sqrt(vx*vx+vy*vy+vz*vz);
+    const maxSpeed = 4.2;
+    if(speed>maxSpeed){ const s=maxSpeed/speed; vx*=s; vy*=s; vz*=s; }
+
+    px += vx*dt; py += vy*dt; pz += vz*dt;
+
+    pos[ix]=px; pos[iy]=py; pos[iz]=pz;
+    velocities[ix]=vx; velocities[iy]=vy; velocities[iz]=vz;
+  }
+
+  if(gstate.burstQueued){
+    const charge = gstate.vortexCharge;
+    for(let i=0;i<COUNT;i++){
+      const ix=i*3, iy=i*3+1, iz=i*3+2;
+      const dx = pos[ix]-hand.x, dy = pos[iy]-hand.y, dz = pos[iz]-hand.z;
+      const dist = Math.sqrt(dx*dx+dy*dy+dz*dz) || 0.001;
+      if(dist < 3.5){
+        const power = (1 - dist/3.5) * (3 + charge*9);
+        velocities[ix] += (dx/dist)*power;
+        velocities[iy] += (dy/dist)*power;
+        velocities[iz] += (dz/dist)*power;
+      }
+    }
+    gstate.burstQueued = false;
+    gstate.vortexCharge = 0;
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+
+  document.getElementById('val-captured').innerHTML = captured + '<span class="unit">nearby</span>';
+
+  renderer.render(scene, camera);
+}
+
+/* ---------------------------------------------------------
+   HAND TRACKING
+--------------------------------------------------------- */
+const previewCanvas = document.getElementById('preview-canvas');
+const previewCtx = previewCanvas.getContext('2d');
+const videoEl = document.getElementById('webcam');
+const handDot = document.getElementById('hand-dot');
+const modeLabel = document.getElementById('mode-label');
+const modeBarFill = document.getElementById('mode-bar-fill');
+const legAttract = document.getElementById('leg-attract');
+const legRepel = document.getElementById('leg-repel');
+const legVortex = document.getElementById('leg-vortex');
+
+function dist3(a,b){ return Math.hypot(a.x-b.x, a.y-b.y, (a.z||0)-(b.z||0)); }
+
+function computeOpenness(lm){
+  const wrist = lm[0];
+  const palmRef = dist3(lm[0], lm[9]) || 0.001;
+  const tips = [8,12,16,20];
+  let avg = 0;
+  tips.forEach(i => avg += dist3(lm[i], wrist));
+  avg /= tips.length;
+  const ratio = avg/palmRef;
+  return THREE.MathUtils.clamp(THREE.MathUtils.mapLinear(ratio, 0.55, 1.4, 0, 1), 0, 1);
+}
+
+let wasPinching = false;
+
+function onResults(results){
+  previewCtx.save();
+  previewCtx.clearRect(0,0,previewCanvas.width, previewCanvas.height);
+  previewCtx.drawImage(results.image, 0,0, previewCanvas.width, previewCanvas.height);
+
+  const hands = results.multiHandLandmarks;
+  if(hands && hands.length>0){
+    const lm = hands[0];
+    gstate.handPresent = true;
+
+    previewCtx.strokeStyle = 'rgba(0,240,255,0.55)';
+    previewCtx.fillStyle = '#ffd23f';
+    const conns = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+    previewCtx.beginPath();
+    conns.forEach(([a,b])=>{
+      previewCtx.moveTo(lm[a].x*previewCanvas.width, lm[a].y*previewCanvas.height);
+      previewCtx.lineTo(lm[b].x*previewCanvas.width, lm[b].y*previewCanvas.height);
+    });
+    previewCtx.stroke();
+    lm.forEach(p=>{
+      previewCtx.beginPath();
+      previewCtx.arc(p.x*previewCanvas.width, p.y*previewCanvas.height, 1.6, 0, Math.PI*2);
+      previewCtx.fill();
+    });
+
+    const wrist = lm[0];
+    const mx = 1 - wrist.x;
+    const my = wrist.y;
+    gstate.handScreenX = mx; gstate.handScreenY = my;
+
+    const ndcX = (mx-0.5)*2;
+    const ndcY = -(my-0.5)*2;
+    gstate.handWorld = unprojectToPlane(ndcX, ndcY, 0);
+
+    gstate.openness = computeOpenness(lm);
+    const pinchDist = dist3(lm[4], lm[8]);
+    gstate.pinchDist = pinchDist;
+    gstate.pinching = pinchDist < 0.055;
+
+    if(gstate.pinching){
+      gstate.vortexCharge = Math.min(gstate.vortexCharge + 0.02, 1);
+      modeLabel.textContent = 'VORTEX ' + Math.round(gstate.vortexCharge*100) + '%';
+      modeBarFill.style.width = (gstate.vortexCharge*100) + '%';
+      legVortex.classList.add('on'); legAttract.classList.remove('on'); legRepel.classList.remove('on');
+    } else {
+      if(wasPinching && gstate.vortexCharge > 0.08){
+        gstate.burstQueued = true;
+      }
+      if(gstate.openness > 0.55){
+        modeLabel.textContent = 'GRAVITY PULL';
+        modeBarFill.style.width = (gstate.openness*100) + '%';
+        legAttract.classList.add('on'); legRepel.classList.remove('on'); legVortex.classList.remove('on');
+      } else {
+        modeLabel.textContent = 'FORCE FIELD';
+        modeBarFill.style.width = ((1-gstate.openness)*100) + '%';
+        legRepel.classList.add('on'); legAttract.classList.remove('on'); legVortex.classList.remove('on');
+      }
+    }
+    wasPinching = gstate.pinching;
+
+    handDot.classList.add('active');
+    handDot.style.left = (mx*window.innerWidth) + 'px';
+    handDot.style.top = (my*window.innerHeight) + 'px';
+
+  } else {
+    gstate.handPresent = false;
+    handDot.classList.remove('active');
+    modeLabel.textContent = 'IDLE DRIFT';
+    modeBarFill.style.width = '0%';
+    [legAttract, legRepel, legVortex].forEach(el=>el.classList.remove('on'));
+    gstate.vortexCharge = 0;
+    wasPinching = false;
+  }
+  previewCtx.restore();
+}
+
+/* ---------------------------------------------------------
+   BOOTSTRAP
+--------------------------------------------------------- */
+const startBtn = document.getElementById('start-btn');
+const startScreen = document.getElementById('start-screen');
+const loader = document.getElementById('loader');
+const errEl = document.getElementById('start-err');
+
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  loader.classList.add('show');
+  errEl.textContent = '';
+  try{
+    initScene();
+    animate();
+
+    const hands = new Hands({ locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({
+      maxNumHands:1,
+      modelComplexity:1,
+      minDetectionConfidence:0.7,
+      minTrackingConfidence:0.6
+    });
+    hands.onResults(onResults);
+
+    const mpCamera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({ image: videoEl }); },
+      width:640, height:480
+    });
+    await mpCamera.start();
+
+    startScreen.style.opacity='0';
+    startScreen.style.pointerEvents='none';
+    startScreen.style.transition='opacity 0.5s ease';
+    setTimeout(()=> startScreen.style.display='none', 500);
+
+  } catch(err){
+    console.error(err);
+    errEl.textContent = 'CAMERA ACCESS DENIED — CHECK PERMISSIONS';
+    startBtn.disabled = false;
+    loader.classList.remove('show');
+  }
+});
+</script>
+</body>
+</html>

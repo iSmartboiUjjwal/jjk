@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cursed Technique — Private Build</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 30%, #0d0d10 0%, #000000 70%); font-family: 'Cormorant Garamond', 'Courier New', serif; }
+  #grain { position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: .5; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E"); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 22vw 4vw rgba(0,0,0,.85); }
+
+  #ui { position: absolute; top: 8%; width: 100%; text-align: center; color: #e9e2d0; pointer-events: none; z-index: 10; }
+  #ui h1 { margin: 0; font-family: 'Georgia', serif; font-weight: 300; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: 14px; background: linear-gradient(180deg, #f4ecd8 0%, #c9a876 55%, #7a6642 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 18px rgba(201,168,118,.35)); }
+  #ui .rule { width: 60px; height: 1px; margin: 10px auto; background: linear-gradient(90deg, transparent, #c9a876, transparent); opacity: .8; }
+  #technique-name { margin-top: 8px; font-family: 'Courier New', monospace; font-size: .78rem; letter-spacing: 5px; text-transform: uppercase; color: #c9a876; opacity: .9; text-shadow: 0 0 12px rgba(201,168,118,.5); transition: opacity .3s ease; }
+
+  #video-container { position: absolute; bottom: 2%; left: 18%; transform: translateX(-50%) scaleX(-1); width: 85vw; max-width: 450px; height: 42vh;  border: 2px solid rgba(255, 255, 255, 0.2); z-index: 20; background-color: #000;  border-radius: 25px; overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.9); }
+  #video-container::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 22px; box-shadow: inset 0 0 40px rgba(0,0,0,.6); }
+  video { width: 100%; height: 100%; object-fit: cover; opacity: .78; filter: saturate(.9) contrast(1.05); }
+  #output_canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+</style>
+
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="grain"></div>
+<div id="vignette"></div>
+
+<div id="ui">
+  <h1>呪術廻戦</h1>
+  <div class="rule"></div>
+  <div id="technique-name">Neutral State</div>
+</div>
+
+<div id="video-container">
+  <video class="input_video"></video>
+  <canvas id="output_canvas"></canvas>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ---------- Scene ----------
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+camera.position.z = 55;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.4, 0.85);
+composer.addPass(bloomPass);
+
+// ---------- Particles ----------
+const COUNT = 20000;
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(COUNT * 3), colors = new Float32Array(COUNT * 3), sizes = new Float32Array(COUNT);
+const targetPositions = new Float32Array(COUNT * 3), targetColors = new Float32Array(COUNT * 3), targetSizes = new Float32Array(COUNT);
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+const particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 0.3, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+scene.add(particles);
+
+const rndSphere = (r) => { const t = Math.random() * 6.28, p = Math.acos(2 * Math.random() - 1); return [r * Math.sin(p) * Math.cos(t), r * Math.sin(p) * Math.sin(t), r * Math.cos(p)]; };
+
+const TECH = {
+  red: (i) => i < COUNT * 0.1
+    ? (([x, y, z]) => ({ x, y, z, r: 3, g: .1, b: .1, s: 2.5 }))(rndSphere(Math.random() * 9))
+    : (() => { const t = i / COUNT, a = t * 15 + (i % 3) * (Math.PI * 2 / 3), rad = 2 + t * 40;
+        return { x: rad * Math.cos(a), y: rad * Math.sin(a), z: (Math.random() - .5) * (10 * t), r: .8, g: 0, b: 0, s: 1 }; })(),
+
+  void: (i) => i < COUNT * 0.15
+    ? (() => { const a = Math.random() * Math.PI * 2; return { x: 26 * Math.cos(a), y: 26 * Math.sin(a), z: (Math.random() - .5), r: 1, g: 1, b: 1, s: 2.5 }; })()
+    : (([x, y, z]) => ({ x, y, z, r: .1, g: .6, b: 1, s: .7 }))(rndSphere(30 + Math.random() * 90)),
+
+  purple: () => Math.random() > 0.8
+    ? { x: (Math.random() - .5) * 100, y: (Math.random() - .5) * 100, z: (Math.random() - .5) * 100, r: .5, g: .5, b: .7, s: .8 }
+    : (([x, y, z]) => ({ x, y, z, r: .6, g: .5, b: 1, s: 2.5 }))(rndSphere(20)),
+
+  shrine: (i) => {
+    const t = COUNT;
+    if (i < t * 0.3) return { x: (Math.random() - .5) * 80, y: -15, z: (Math.random() - .5) * 80, r: .4, g: 0, b: 0, s: .8 };
+    if (i < t * 0.4) { const px = ((i % 4) < 2 ? 1 : -1) * 12, pz = ((i % 4) % 2 === 0 ? 1 : -1) * 8;
+      return { x: px + (Math.random() - .5) * 2, y: -15 + Math.random() * 30, z: pz + (Math.random() - .5) * 2, r: .2, g: .2, b: .2, s: .6 }; }
+    if (i < t * 0.6) { const a = Math.random() * Math.PI * 2, rad = Math.random() * 30, curve = Math.pow(rad / 30, 2) * 10;
+      return { x: rad * Math.cos(a), y: 15 - curve + Math.random() * 2, z: rad * Math.sin(a) * .6, r: .6, g: 0, b: 0, s: .6 }; }
+    return { x: 0, y: 0, z: 0, r: 0, g: 0, b: 0, s: 0 };
+  },
+
+  neutral: (i) => i < COUNT * 0.05
+    ? (([x, y, z]) => ({ x, y, z, r: .1, g: .1, b: .2, s: .4 }))(rndSphere(15 + Math.random() * 20))
+    : { x: 0, y: 0, z: 0, r: 0, g: 0, b: 0, s: 0 }
+};
+
+const TECH_META = {
+  neutral: { color: '#00ffff', label: 'Neutral State', bloom: 1.0 },
+  red:     { color: '#ff3333', label: 'Reverse Cursed Technique: Red', bloom: 2.5 },
+  void:    { color: '#00ffff', label: 'Domain Expansion: Infinite Void', bloom: 2.0 },
+  purple:  { color: '#bb00ff', label: 'Secret Technique: Hollow Purple', bloom: 4.0 },
+  shrine:  { color: '#ff0000', label: 'Domain Expansion: Malevolent Shrine', bloom: 2.5 },
+};
+
+// ---------- Hand tracking ----------
+let currentTech = 'neutral', shakeIntensity = 0, glowColor = '#00ffff';
+const videoElement = document.querySelector('.input_video');
+const canvasElement = document.getElementById('output_canvas');
+const canvasCtx = canvasElement.getContext('2d');
+
+const hands = new Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7 });
+
+hands.onResults((results) => {
+  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  let detected = 'neutral';
+
+  results.multiHandLandmarks?.forEach((lm) => {
+    drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: glowColor, lineWidth: 5 });
+    drawLandmarks(canvasCtx, lm, { color: '#fff', lineWidth: 1, radius: 2 });
+
+    const isUp = (t, p) => lm[t].y < lm[p].y;
+    const pinch = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
+
+    if (pinch < 0.04) detected = 'purple';
+    else if (isUp(8, 6) && isUp(12, 10) && isUp(16, 14) && isUp(20, 18)) detected = 'shrine';
+    else if (isUp(8, 6) && isUp(12, 10) && !isUp(16, 14)) detected = 'void';
+    else if (isUp(8, 6) && !isUp(12, 10)) detected = 'red';
+  });
+
+  updateState(detected);
+});
+
+function updateState(tech) {
+  if (currentTech === tech) return;
+  currentTech = tech;
+
+  const meta = TECH_META[tech];
+  glowColor = meta.color;
+  bloomPass.strength = meta.bloom;
+  document.getElementById('technique-name').innerText = meta.label;
+  shakeIntensity = tech !== 'neutral' ? 0.4 : 0;
+
+  const fn = TECH[tech];
+  for (let i = 0; i < COUNT; i++) {
+    const p = fn(i);
+    targetPositions[i * 3] = p.x; targetPositions[i * 3 + 1] = p.y; targetPositions[i * 3 + 2] = p.z;
+    targetColors[i * 3] = p.r; targetColors[i * 3 + 1] = p.g; targetColors[i * 3 + 2] = p.b;
+    targetSizes[i] = p.s;
+  }
+}
+
+new Camera(videoElement, {
+  onFrame: async () => {
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+    await hands.send({ image: videoElement });
+  }, width: 640, height: 480
+}).start();
+
+// ---------- Animation ----------
+function animate() {
+  requestAnimationFrame(animate);
+
+  renderer.domElement.style.transform = shakeIntensity > 0
+    ? `translate(${(Math.random() - .5) * shakeIntensity * 40}px, ${(Math.random() - .5) * shakeIntensity * 40}px)`
+    : 'translate(0,0)';
+
+  const pos = geometry.attributes.position.array, col = geometry.attributes.color.array, siz = geometry.attributes.size.array;
+  for (let i = 0; i < COUNT * 3; i++) { pos[i] += (targetPositions[i] - pos[i]) * 0.1; col[i] += (targetColors[i] - col[i]) * 0.1; }
+  for (let i = 0; i < COUNT; i++) siz[i] += (targetSizes[i] - siz[i]) * 0.1;
+
+  geometry.attributes.position.needsUpdate = geometry.attributes.color.needsUpdate = geometry.attributes.size.needsUpdate = true;
+
+  if (currentTech === 'red') particles.rotation.z -= 0.1;
+  else if (currentTech === 'purple') { particles.rotation.z += 0.2; particles.rotation.y += 0.05; }
+  else if (currentTech === 'shrine') particles.rotation.set(0, 0, 0);
+  else particles.rotation.y += 0.005;
+
+  composer.render();
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
